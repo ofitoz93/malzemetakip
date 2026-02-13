@@ -18,6 +18,7 @@ import {
   MapPin,
   Loader2,
   Info,
+  PlusCircle,
 } from 'lucide-react';
 import { format, isPast, differenceInDays } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -34,6 +35,7 @@ const AdminDashboard = () => {
   const [selectedEq, setSelectedEq] = useState(null); // Eylem (Detay) Modalı
 
   const [types, setTypes] = useState([]);
+  const [customTypeName, setCustomTypeName] = useState('');
   const [newEq, setNewEq] = useState({
     name: '',
     serial_number: '',
@@ -67,7 +69,31 @@ const AdminDashboard = () => {
     const finalQr =
       newEq.qr_code ||
       `EQ-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
-    const selectedType = types.find((t) => t.id === newEq.type_id);
+
+    let resolvedTypeId = newEq.type_id;
+
+    // Eğer kullanıcı yeni bir tür giriyorsa, önce onu kaydet
+    if (newEq.type_id === '__custom__') {
+      if (!customTypeName.trim()) {
+        alert('Lütfen yeni tür adını giriniz.');
+        return;
+      }
+      const { data: newType, error: typeError } = await supabase
+        .from('equipment_types')
+        .insert({ name: customTypeName.trim() })
+        .select()
+        .single();
+
+      if (typeError) {
+        alert('Tür oluşturulurken hata: ' + typeError.message);
+        return;
+      }
+      resolvedTypeId = newType.id;
+      // Yeni türü listeye ekle
+      setTypes((prev) => [...prev, newType]);
+    }
+
+    const selectedType = types.find((t) => t.id === resolvedTypeId);
     const nextDate = new Date();
     nextDate.setDate(
       nextDate.getDate() + (selectedType?.maintenance_period_days || 365)
@@ -75,6 +101,7 @@ const AdminDashboard = () => {
 
     const { error } = await supabase.from('equipment').insert({
       ...newEq,
+      type_id: resolvedTypeId,
       qr_code: finalQr,
       next_maintenance_date: nextDate.toISOString(),
       status: 'active',
@@ -91,6 +118,7 @@ const AdminDashboard = () => {
         qr_code: '',
         location_description: 'Merkez Atölye',
       });
+      setCustomTypeName('');
     } else {
       alert('Hata: ' + error.message);
     }
@@ -372,9 +400,12 @@ const AdminDashboard = () => {
                       required
                       className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm outline-none"
                       value={newEq.type_id}
-                      onChange={(e) =>
-                        setNewEq({ ...newEq, type_id: e.target.value })
-                      }
+                      onChange={(e) => {
+                        setNewEq({ ...newEq, type_id: e.target.value });
+                        if (e.target.value !== '__custom__') {
+                          setCustomTypeName('');
+                        }
+                      }}
                     >
                       <option value="">Seçiniz</option>
                       {types.map((t) => (
@@ -382,7 +413,20 @@ const AdminDashboard = () => {
                           {t.name}
                         </option>
                       ))}
+                      <option value="__custom__">➕ Yeni tür ekle...</option>
                     </select>
+                    {newEq.type_id === '__custom__' && (
+                      <div className="mt-2">
+                        <input
+                          required
+                          className="w-full p-3.5 bg-white border-2 border-indigo-200 rounded-2xl text-sm outline-none focus:border-indigo-400 transition-colors"
+                          placeholder="Yeni tür adı giriniz..."
+                          value={customTypeName}
+                          onChange={(e) => setCustomTypeName(e.target.value)}
+                          autoFocus
+                        />
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-1.5 text-left">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
